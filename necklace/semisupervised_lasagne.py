@@ -12,7 +12,6 @@ from theano import tensor as T
 import params_io as io
 from build_cg import build_computation_graph
 from load import mnist
-
 # File to keep where the each file should be stored
 from path_settings import BEST_MODEL_PATH, LAST_MODEL_PATH, DATA_PATH
 
@@ -76,6 +75,7 @@ IM_SIZE = trX.shape[1]
 dimensions = [[1500, 3, 500], [1000, 3, 200]]  # example of 3 stacks
 # Set learning ratio for unsupervised, supervised and weights regularization
 lr = (1.0, 1.0, 0)
+supervised_cost_fun = 'categorical_crossentropy'  # 'categorical_crossentropy' or 'squared_error'
 
 # -----------------------CREATE RUN FUNCTIONS------------------#
 # Creating the computation graph
@@ -105,14 +105,20 @@ regularization_params = utils.unique(regularization_params)
 # Creating loss functions
 # Train loss has to take into account of labeled image or not
 loss1 = objectives.squared_error(reconstruction, input_var)
-loss2 = objectives.squared_error(prediction, target_var)
+if supervised_cost_fun == 'squared_error':
+    loss2 = objectives.squared_error(prediction, target_var) * repeat_col(labeled_var, 10)
+elif supervised_cost_fun == 'categorical_crossentropy':
+    loss2 = objectives.categorical_crossentropy(prediction, target_var) * labeled_var.T
 l2_penalties = regularization.apply_penalty(regularization_params, regularization.l2)
-loss = lr[0]*loss1.mean() +\
-       lr[1]*(loss2*repeat_col(labeled_var, 10)).mean() +\
+loss = lr[0]*loss1.mean() + \
+       lr[1] * loss2.mean() +\
        lr[2]*l2_penalties.mean()
 # Test loss means 100% labeled
 test_loss1 = objectives.squared_error(test_reconstruction, input_var)
-test_loss2 = objectives.squared_error(test_prediction, target_var)
+if supervised_cost_fun == 'squared_error':
+    test_loss2 = objectives.squared_error(test_prediction, target_var)
+elif supervised_cost_fun == 'categorical_crossentropy':
+    test_loss2 = objectives.categorical_crossentropy(test_prediction, target_var)
 test_loss = lr[0]*test_loss1.mean() +\
             lr[1]*test_loss2.mean() +\
             lr[2]*l2_penalties.mean()
@@ -171,7 +177,6 @@ elif MODE == 'TRAIN':
         for batch in iterate_minibatches(trX, trY, labeled_idx, 500, shuffle=True):
             inputs, targets, labeled = batch
             train_err = train_fn(inputs, targets, labeled)
-
         train_err = 0
         train_acc = 0
         train_batches = 0
