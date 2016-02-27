@@ -11,7 +11,8 @@ RunParameters = namedtuple('RunParameters', 'input_shape'
                                             ' update_lr'
                                             ' batch_size'
                                             ' losses_ratio'
-                                            ' supervised_cost_fun')
+                                            ' supervised_cost_fun'
+                                            ' run_index')
 batch_size = 500
 run_parameters = RunParameters(
     (batch_size, 784),
@@ -27,7 +28,8 @@ run_parameters = RunParameters(
     0.00001,
     batch_size,
     # Set learning ratio for unsupervised, supervised and weights regularization
-    [1.0, 1.0, 1e-3],
+    [1.0, 1.0, 1e-2],
     # 'categorical_crossentropy' or 'squared_error'
-    'categorical_crossentropy'
+    'categorical_crossentropy',
+    0
 )
