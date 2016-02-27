@@ -38,14 +38,14 @@ class ShrinkageLayer(Layer):
         return output
 
     def get_output_shape_for(self, input_shape):
-        return (None, self.dict_size)
+        return (input_shape[0], self.dict_size)
 
 
 class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
     def __init__(self, incoming, dimension, params_init=(GlorotUniform(),
                                                          GlorotUniform(),
                                                          Uniform([0, 0.1])),
-                 addition_parameters=[False, None, None, True], **kwargs):
+                 additional_parameters=[False, None, None, False], **kwargs):
         '''
         init parameters
         :param incoming: input to the LISTA layer
@@ -67,10 +67,10 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
                                 lista=True, lista_weight_W=True, regularizable=True)
         self.theta = self.add_param(params_init[2], [self.dict_size, ], name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
-        self.transposed = addition_parameters[0]
-        self.p_drop_input_to_shrinkage = addition_parameters[1]
-        self.p_drop_shrinkage = addition_parameters[2]
-        self.rescale = addition_parameters[3]
+        self.transposed = additional_parameters[0]
+        self.p_drop_input_to_shrinkage = additional_parameters[1]
+        self.p_drop_shrinkage = additional_parameters[2]
+        self.rescale = additional_parameters[3]
 
     def dropout(self, input, p_drop, deterministic=False, **kwargs):
         """
@@ -116,7 +116,7 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
         return output
 
     def get_output_shape_for(self, input_shape):
-        return (None, self.dict_size)
+        return (input_shape[0], self.dict_size)
 
 
 class LISTA(Layer, SparseAlgorithm):
@@ -166,4 +166,4 @@ class LISTA(Layer, SparseAlgorithm):
         return output
 
     def get_output_shape_for(self, input_shape):
-        return (None, self.dict_size)
+        return (input_shape[0], self.dict_size)

@@ -12,8 +12,9 @@ from theano import tensor as T
 import params_io as io
 from build_cg import build_computation_graph
 from load import mnist
-# File to keep where the each file should be stored
+from parameters import run_parameters
 from path_settings import BEST_MODEL_PATH, LAST_MODEL_PATH, DATA_PATH
+
 
 # -----------------------HELPER FUNCTIONS-------------------------------------------
 def iterate_minibatches(inputs, targets, labeled, batchsize, shuffle=False):
@@ -41,7 +42,7 @@ def run_test(test_function, testX, testY, prefix='test'):
     test_batches = 0
     for batch in iterate_minibatches(testX, testY,
                                      np.zeros((testY.shape[0], 1)),
-                                     500,
+                                     run_parameters.batch_size,
                                      shuffle=False):
         inputs, targets, labeled = batch
         err, _, _, _, acc = test_function(inputs, targets, labeled)
@@ -70,12 +71,8 @@ trX, vlX, teX, trY, vlY, teY = mnist(onehot=True, ndim=2)
 IM_SIZE = trX.shape[1]
 
 #-----------------------SET PARAMETERS-------------------------#
-# Set the dimension here, 1 list = 1 stack, 2 list = 2 stacks, etc...
-# dimensions = [[1500, 3, 200]]  # example of 1 stack
-dimensions = [[1500, 3, 500], [1000, 3, 200]]  # example of 3 stacks
-# Set learning ratio for unsupervised, supervised and weights regularization
-lr = (1.0, 1.0, 0)
-supervised_cost_fun = 'categorical_crossentropy'  # 'categorical_crossentropy' or 'squared_error'
+losses_ratio = run_parameters.losses_ratio
+supervised_cost_fun = run_parameters.supervised_cost_fun
 
 # -----------------------CREATE RUN FUNCTIONS------------------#
 # Creating the computation graph
@@ -84,7 +81,7 @@ input_shape = [None, IM_SIZE]
 input_var = T.fmatrix('input_var')
 target_var = T.fmatrix('target_var')
 labeled_var = T.fmatrix('labeled_var')
-unsupervised_graph, supervised_graph, features = build_computation_graph(input_var, input_shape, dimensions)
+unsupervised_graph, supervised_graph, features = build_computation_graph(input_var, run_parameters)
 # Train graph has dropout
 reconstruction = layers.get_output(unsupervised_graph)
 prediction = layers.get_output(supervised_graph)
@@ -110,23 +107,23 @@ if supervised_cost_fun == 'squared_error':
 elif supervised_cost_fun == 'categorical_crossentropy':
     loss2 = objectives.categorical_crossentropy(prediction, target_var) * labeled_var.T
 l2_penalties = regularization.apply_penalty(regularization_params, regularization.l2)
-loss = lr[0]*loss1.mean() + \
-       lr[1] * loss2.mean() +\
-       lr[2]*l2_penalties.mean()
+loss = losses_ratio[0] * loss1.mean() + \
+       losses_ratio[1] * loss2.mean() + \
+       losses_ratio[2] * l2_penalties.mean()
 # Test loss means 100% labeled
 test_loss1 = objectives.squared_error(test_reconstruction, input_var)
 if supervised_cost_fun == 'squared_error':
     test_loss2 = objectives.squared_error(test_prediction, target_var)
 elif supervised_cost_fun == 'categorical_crossentropy':
     test_loss2 = objectives.categorical_crossentropy(test_prediction, target_var)
-test_loss = lr[0]*test_loss1.mean() +\
-            lr[1]*test_loss2.mean() +\
-            lr[2]*l2_penalties.mean()
+test_loss = losses_ratio[0] * test_loss1.mean() + \
+            losses_ratio[1] * test_loss2.mean() + \
+            losses_ratio[2] * l2_penalties.mean()
 
 # Update function to train
 # sgd_lr = theano.shared(utils.floatX(0.001))
 # sgd_lr_decay = utils.floatX(0.9)
-updates_function = updates.adam(loss, params, 0.0001)
+updates_function = updates.adam(loss, params, run_parameters.update_lr)
 
 # Compile train function
 train_fn = theano.function([input_var, target_var, labeled_var], loss, updates=updates_function,
@@ -139,9 +136,9 @@ test_acc = T.mean(T.eq(T.argmax(test_prediction, axis=1), T.argmax(target_var, a
 #val_fn = theano.function([input_var, target_var, labeled_var], [loss2*lr[1], test_acc], allow_input_downcast=True)
 val_fn = theano.function([input_var, target_var, labeled_var],
                          [test_loss,
-                          lr[0]*test_loss1.mean(),
-                          lr[1]*test_loss2.mean(),
-                          lr[2]*l2_penalties.mean(),
+                          losses_ratio[0] * test_loss1.mean(),
+                          losses_ratio[1] * test_loss2.mean(),
+                          losses_ratio[2] * l2_penalties.mean(),
                           test_acc], allow_input_downcast=True,
                          on_unused_input='ignore')
 
@@ -174,7 +171,7 @@ elif MODE == 'TRAIN':
         # if epoch % 1000 == 0:
         #     sgd_lr *= sgd_lr_decay
         start_time = time.time()
-        for batch in iterate_minibatches(trX, trY, labeled_idx, 500, shuffle=True):
+        for batch in iterate_minibatches(trX, trY, labeled_idx, run_parameters.batch_size, shuffle=True):
             inputs, targets, labeled = batch
             train_err = train_fn(inputs, targets, labeled)
         train_err = 0
@@ -184,7 +181,7 @@ elif MODE == 'TRAIN':
         train_loss1.append(0)
         train_loss2.append(0)
         train_regularize.append(0)
-        for batch in iterate_minibatches(trX, trY, labeled_idx, 500, shuffle=True):
+        for batch in iterate_minibatches(trX, trY, labeled_idx, run_parameters.batch_size, shuffle=True):
             inputs, targets, labeled = batch
             err, _loss1, _loss2, _regularize, acc = val_fn(inputs, targets, labeled)
             train_loss[-1] += err
