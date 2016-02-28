@@ -13,7 +13,7 @@ import params_io as io
 from build_cg import build_computation_graph
 from load import mnist
 from parameters import run_parameters
-from path_settings import BEST_MODEL_PATH, LAST_MODEL_PATH, DATA_PATH
+from path_settings import BEST_MODEL_PATH, LAST_MODEL_PATH, WRONG_SAMPLES_PATH, DATA_PATH
 
 
 # -----------------------HELPER FUNCTIONS-------------------------------------------
@@ -40,21 +40,26 @@ def run_test(test_function, testX, testY, prefix='test'):
     test_err = 0
     test_acc = 0
     test_batches = 0
+    wrong_samples = []
+    wrong_classification = []
     for batch in iterate_minibatches(testX, testY,
                                      np.zeros((testY.shape[0], 1)),
                                      run_parameters.batch_size,
                                      shuffle=False):
         inputs, targets, labeled = batch
-        err, _, _, _, acc = test_function(inputs, targets, labeled)
+        err, _, _, _, classification, acc, _wrong_samples = test_function(inputs, targets, labeled)
         test_err += err
         test_acc += acc
+        wrong_samples += (_wrong_samples.nonzero()[0] + test_batches * run_parameters.batch_size).tolist()
+        _wrong_classification = classification[_wrong_samples.nonzero()]
+        wrong_classification += _wrong_classification.tolist()
         test_batches += 1
     average_test_score = test_err / test_batches
     test_accuracy = test_acc / test_batches
     print("  " + prefix + " loss:\t\t{:.6f}".format(average_test_score))
     print("  " + prefix + " accuracy:\t{:.6f} %".format(
         test_accuracy * 100))
-    return average_test_score, test_accuracy
+    return average_test_score, test_accuracy, wrong_samples, wrong_classification
 
 
 # -----------------------LOAD IMAGES AND LABELS----------------------------#
@@ -75,7 +80,6 @@ supervised_cost_fun = run_parameters.supervised_cost_fun
 # -----------------------CREATE RUN FUNCTIONS------------------#
 # Creating the computation graph
 print('Building computation graph')
-input_shape = [run_parameters.batch_size, IM_SIZE]
 input_var = T.fmatrix('input_var')
 target_var = T.fmatrix('target_var')
 labeled_var = T.fmatrix('labeled_var')
@@ -125,11 +129,12 @@ updates_function = updates.adam(loss, params, run_parameters.update_lr)
 
 # Compile train function
 train_fn = theano.function([input_var, target_var, labeled_var], loss, updates=updates_function,
-                           allow_input_downcast=True,
-                           on_unused_input='ignore')
+                           allow_input_downcast=True, on_unused_input='ignore')
 # Compile test prediction function
+classification = T.argmax(test_prediction, axis=1)
 test_acc = T.mean(T.eq(T.argmax(test_prediction, axis=1), T.argmax(target_var, axis=1)),
                   dtype=theano.config.floatX)
+test_wrong = T.neq(T.argmax(test_prediction, axis=1), T.argmax(target_var, axis=1))
 # Compile a second function computing the validation loss and accuracy:
 #val_fn = theano.function([input_var, target_var, labeled_var], [loss2*lr[1], test_acc], allow_input_downcast=True)
 val_fn = theano.function([input_var, target_var, labeled_var],
@@ -137,8 +142,8 @@ val_fn = theano.function([input_var, target_var, labeled_var],
                           losses_ratio[0] * test_loss1.mean(),
                           losses_ratio[1] * test_loss2.mean(),
                           losses_ratio[2] * l2_penalties.mean(),
-                          test_acc], allow_input_downcast=True,
-                         on_unused_input='ignore')
+                          classification, test_acc, test_wrong],
+                         allow_input_downcast=True, on_unused_input='ignore')
 
 # ----------------------------RUN-----------------------------------#
 MODE = input('"TEST" OR "TRAIN"?\n')
@@ -179,15 +184,21 @@ elif MODE == 'TRAIN':
         train_loss1.append(0)
         train_loss2.append(0)
         train_regularize.append(0)
+        train_wrong_samples = []
+        train_wrong_classification = []
         for batch in iterate_minibatches(trX, trY, labeled_idx, run_parameters.batch_size, shuffle=True):
             inputs, targets, labeled = batch
-            err, _loss1, _loss2, _regularize, acc = val_fn(inputs, targets, labeled)
+            err, _loss1, _loss2, _regularize, train_classification, acc, _wrong_samples = val_fn(inputs, targets,
+                                                                                                 labeled)
             train_loss[-1] += err
             train_loss1[-1] += _loss1
             train_loss2[-1] += _loss2
             train_regularize[-1] += _regularize
             train_err += err
             train_acc += acc
+            train_wrong_samples += (_wrong_samples.nonzero()[0] + train_batches * run_parameters.batch_size).tolist()
+            _wrong_classification = train_classification[_wrong_samples.nonzero()]
+            train_wrong_classification += _wrong_classification.tolist()
             train_batches += 1
         train_loss[-1] /= train_batches
         train_loss1[-1] /= train_batches
@@ -199,7 +210,7 @@ elif MODE == 'TRAIN':
         print("  training accuracy:\t{:.6f} %".format(
             train_acc / train_batches * 100))
 
-        valid_err, valid_acc = run_test(val_fn, vlX, vlY, "validation")
+        valid_err, valid_acc, valid_wrong_samples, valid_wrong_classification = run_test(val_fn, vlX, vlY, "validation")
         # save backup model every 10 epochs
         if epoch % 10 == 0:
             io.write_model_data([unsupervised_graph, supervised_graph], [best_validation_acc], LAST_MODEL_PATH)
@@ -208,8 +219,11 @@ elif MODE == 'TRAIN':
             print('NEW BEST MODEL FOUND!')
             best_validation_acc = valid_acc
             io.write_model_data([unsupervised_graph, supervised_graph], [best_validation_acc], BEST_MODEL_PATH)
-            run_test(val_fn, teX, teY, "test")
-
+            _, _, test_wrong_samples, test_wrong_classification = run_test(val_fn, teX, teY, "test")
+            with open(WRONG_SAMPLES_PATH, 'w') as f:
+                pickle.dump([train_wrong_samples, train_wrong_classification,
+                             valid_wrong_samples, valid_wrong_classification,
+                             test_wrong_samples, test_wrong_classification], f)
     # plot losses graph
     plt.clf()
     plt.plot(train_loss, 'r-')
