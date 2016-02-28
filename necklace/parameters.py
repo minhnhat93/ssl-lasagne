@@ -28,8 +28,13 @@ run_parameters = RunParameters(
     0.00001,
     batch_size,
     # Set learning ratio for unsupervised, supervised and weights regularization
-    [1.0, 1.0, 1e-2],
+    [1.0, 1.0, 1e-3],
     # 'categorical_crossentropy' or 'squared_error'
     'categorical_crossentropy',
     0
 )
+
+N_TRAIN = 50000
+N_VALID = 10000
+N_LABELED = 10000
+N_TEST = 10000

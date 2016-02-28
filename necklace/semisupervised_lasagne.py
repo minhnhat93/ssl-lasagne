@@ -62,9 +62,7 @@ print('Loading data')
 
 # Load index of labeled images in train set
 with open(os.path.join(DATA_PATH,'labeled_index.pkl'), 'r') as f:
-    loaded_obj = pickle.load(f)
-VALIDATION_SIZE = loaded_obj[0]
-labeled_idx = loaded_obj[1]
+    labeled_idx = pickle.load(f)
 
 # Load image and label of train, validation, test set
 trX, vlX, teX, trY, vlY, teY = mnist(onehot=True, ndim=2)
@@ -77,7 +75,7 @@ supervised_cost_fun = run_parameters.supervised_cost_fun
 # -----------------------CREATE RUN FUNCTIONS------------------#
 # Creating the computation graph
 print('Building computation graph')
-input_shape = [None, IM_SIZE]
+input_shape = [run_parameters.batch_size, IM_SIZE]
 input_var = T.fmatrix('input_var')
 target_var = T.fmatrix('target_var')
 labeled_var = T.fmatrix('labeled_var')

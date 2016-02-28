@@ -4,6 +4,7 @@ import os
 import numpy as np
 # File to keep where the each file should be stored
 from path_settings import DATA_PATH
+from parameters import N_TRAIN, N_VALID, N_TEST
 
 
 def one_hot(x, n):
@@ -15,15 +16,28 @@ def one_hot(x, n):
     return o_h
 
 
-def mnist(ntrain=50000, nvalid=10000, ntest=10000, onehot=True, ndim=2):
+def mnist(ntrain=N_TRAIN, nvalid=N_VALID, ntest=N_TEST, onehot=True, ndim=2):
     f = open(os.path.join(DATA_PATH, 'mnist.pkl'))
     loaded_objs = pickle.load(f)
+    f.close()
+    f = open(os.path.join(DATA_PATH, 'valid_index.pkl'))
+    valid_mask = pickle.load(f)
+    f.close()
     trX = np.asarray(loaded_objs[0][0])
     trY = np.asarray(loaded_objs[0][1])
     vlX = np.asarray(loaded_objs[1][0])
     vlY = np.asarray(loaded_objs[1][1])
     teX = np.asarray(loaded_objs[2][0])
     teY = np.asarray(loaded_objs[2][1])
+
+    # NEW IMPLEMENTATION
+    vlX = np.concatenate((trX, vlX), axis=0)
+    vlY = np.concatenate((trY, vlY), axis=0)
+    trX = np.delete(vlX, valid_mask, axis=0)
+    trY = np.delete(vlY, valid_mask, axis=0)
+    vlX = vlX[valid_mask]
+    vlY = vlY[valid_mask]
+    # END
 
     if onehot:
         trY = one_hot(trY, 10)
