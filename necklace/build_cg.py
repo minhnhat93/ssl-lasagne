@@ -3,7 +3,6 @@ from lasagne.layers import InputLayer, DropoutLayer, DenseLayer, BatchNormLayer,
 from lasagne.nonlinearities import identity, softmax
 
 from otherlayers import LinearCombinationLayer, TransposedDenseLayer
-from sparse import LISTAWithDropout
 
 
 def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params, tied_weight=False, necklace_link=False,
@@ -30,9 +29,9 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         stack_idx += 1
         sparse_dimensions = dimensions[_][0:2]
         output_size = dimensions[_][2]
-        params_init = [GlorotUniform(0.01),
+        params_init = [GlorotUniform(),
                        GlorotUniform(0.01),
-                       Uniform([0, 0.01])]
+                       Uniform([0, 0.5])]
         network = SparseClass(network, sparse_dimensions, params_init, [False] + additional_sparse_params,
                               name='SPARSE_' + stack_str)
         D_list.append(network.get_dictionary_param())
@@ -43,10 +42,9 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         network = DropoutLayer(network, p=p_weight, name='PROJ_DROP_' + stack_str)
         feature_layers.append(network)
         if residual_link:
-            layer = LinearCombinationLayer([DropoutLayer(
+            network = LinearCombinationLayer([DropoutLayer(
                 DenseLayer(last_residual_layer, num_units=network.output_shape[-1], W=Constant(0.0), b=None,
                            nonlinearity=identity, name='PROJ_FEA_' + stack_str), p=p_weight), network], [1, 1])
-            network = layer
         if batch_normalization:
             network = BatchNormLayer(network, axes=norm_axes)
         last_residual_layer = network
@@ -59,9 +57,9 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         stack_idx += 1
         sparse_dimensions = [dimensions[_][0], dimensions[_][1]]
         output_size = num_input if _ == 0 else dimensions[_ - 1][2]
-        params_init = [G_list[_] if tied_weight else GlorotUniform(0.01),
+        params_init = [G_list[_] if tied_weight else GlorotUniform(),
                        GlorotUniform(0.01),
-                       Uniform([0, 0.01])]
+                       Uniform([0, 0.5])]
         # make link from encoding feature layer to decoding sparse layer. in case of the inner most feature layer,
         # feature_layer[_] and network are both the inner most layer
         if necklace_link:
@@ -83,7 +81,7 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
                 [DropoutLayer(DenseLayer(last_residual_layer, num_units=network.output_shape[-1], W=Constant(0.0),
                                          b=None, nonlinearity=identity, name='PROJ_FEA_' + stack_str), p=p_weight),
                  network], [1, 1])
-        if batch_normalization:
+        if batch_normalization and _ is not 0:
             network = BatchNormLayer(network, axes=norm_axes)
         last_residual_layer = network
     return network, classification_branch, feature
@@ -91,6 +89,7 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
 
 def build_computation_graph(input_var, parameters):
     #dimension[-1][-1] is the last output size of last stacked layer a.k.a size of the image vector
+    sparse_algorithm = parameters.sparse_algorithm
     input_shape = parameters.input_shape
     dimensions = parameters.dimension
     tied_weight = parameters.tied_weight
@@ -103,9 +102,7 @@ def build_computation_graph(input_var, parameters):
     additional_sparse_params = parameters.additional_sparse_params
     network = InputLayer(shape=input_shape, input_var=input_var, name='input')
     network = DropoutLayer(network, p=p_input, name='input_drop')
-    if batch_normalization:
-        network = BatchNormLayer(network, axes=norm_axes)
     network, classification_branch, features = NecklaceNetwork(
-        network, dimensions, LISTAWithDropout, additional_sparse_params, tied_weight, necklace_link, residual_link,
+        network, dimensions, sparse_algorithm, additional_sparse_params, tied_weight, necklace_link, residual_link,
         batch_normalization, norm_axes, p_weight)
     return network, classification_branch, features

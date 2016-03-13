@@ -1,12 +1,17 @@
+from collections import deque
+
+import numpy as np
 import theano
 import theano.tensor as T
 from lasagne.init import GlorotUniform, Normal, Uniform
 from lasagne.layers import Layer, DropoutLayer
+from lasagne.utils import floatX
 
 
-def shrinkage(x, theta):
-    return T.switch(T.lt(x, -theta), x + theta, T.switch(T.le(x, theta), 0, x - theta))
-
+def shrinkage(x):
+    shrink_value = 1
+    # return T.switch(T.lt(x, -shrink_value), x + shrink_value, T.switch(T.le(x, shrink_value), 0, x - shrink_value))
+    return T.switch(T.lt(x, shrink_value), 0, x - shrink_value)
 
 class SparseAlgorithm:
     def __init__(self):
@@ -17,6 +22,96 @@ class SparseAlgorithm:
 
     def get_dictionary(self):
         raise NotImplementedError
+
+
+def get_all_sparse_layers(layer, treat_as_input=None):
+    """
+    This function gathers all layers below one or more given :class:`Layer`
+    instances, including the given layer(s). Its main use is to collect all
+    layers of a network just given the output layer(s). The layers are
+    guaranteed to be returned in a topological order: a layer in the result
+    list is always preceded by all layers its input depends on.
+
+    Parameters
+    ----------
+    layer : Layer or list
+        the :class:`Layer` instance for which to gather all layers feeding
+        into it, or a list of :class:`Layer` instances.
+
+    treat_as_input : None or iterable
+        an iterable of :class:`Layer` instances to treat as input layers
+        with no layers feeding into them. They will show up in the result
+        list, but their incoming layers will not be collected (unless they
+        are required for other layers as well).
+
+    Returns
+    -------
+    list
+        a list of :class:`Layer` instances feeding into the given
+        instance(s) either directly or indirectly, and the given
+        instance(s) themselves, in topological order.
+
+    Examples
+    --------
+    >>> from lasagne.layers import InputLayer, DenseLayer
+    >>> l_in = InputLayer((100, 20))
+    >>> l1 = DenseLayer(l_in, num_units=50)
+    >>> get_all_layers(l1) == [l_in, l1]
+    True
+    >>> l2 = DenseLayer(l_in, num_units=10)
+    >>> get_all_layers([l2, l1]) == [l_in, l2, l1]
+    True
+    >>> get_all_layers([l1, l2]) == [l_in, l1, l2]
+    True
+    >>> l3 = DenseLayer(l2, num_units=20)
+    >>> get_all_layers(l3) == [l_in, l2, l3]
+    True
+    >>> get_all_layers(l3, treat_as_input=[l2]) == [l2, l3]
+    True
+    """
+    # We perform a depth-first search. We add a layer to the result list only
+    # after adding all its incoming layers (if any) or when detecting a cycle.
+    # We use a LIFO stack to avoid ever running into recursion depth limits.
+    try:
+        queue = deque(layer)
+    except TypeError:
+        queue = deque([layer])
+    seen = set()
+    done = set()
+    result = []
+
+    # If treat_as_input is given, we pretend we've already collected all their
+    # incoming layers.
+    if treat_as_input is not None:
+        seen.update(treat_as_input)
+
+    while queue:
+        # Peek at the leftmost node in the queue.
+        layer = queue[0]
+        if layer is None:
+            # Some node had an input_layer set to `None`. Just ignore it.
+            queue.popleft()
+        elif layer not in seen:
+            # We haven't seen this node yet: Mark it and queue all incomings
+            # to be processed first. If there are no incomings, the node will
+            # be appended to the result list in the next iteration.
+            seen.add(layer)
+            if hasattr(layer, 'input_layers'):
+                queue.extendleft(reversed(layer.input_layers))
+            elif hasattr(layer, 'input_layer'):
+                queue.appendleft(layer.input_layer)
+        else:
+            # We've been here before: Either we've finished all its incomings,
+            # or we've detected a cycle. In both cases, we remove the layer
+            # from the queue and append it to the result list.
+            queue.popleft()
+            if layer not in done:
+                if issubclass(layer.__class__, SparseAlgorithm):
+                    result.append(layer)
+                done.add(layer)
+
+    return result
+
 
 
 class ShrinkageLayer(Layer):
@@ -58,19 +153,37 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
         :return:
         '''
         super(LISTAWithDropout, self).__init__(incoming, **kwargs)
+        self.transposed = additional_parameters[0]
+        self.p_drop_input_to_shrinkage = additional_parameters[1]
+        self.p_drop_shrinkage = additional_parameters[2]
+        self.rescale = additional_parameters[3]
         num_inputs = incoming.output_shape[-1]
         self.dict_size = dimension[0]
         self.T = dimension[1]
         self.W = self.add_param(params_init[0], [num_inputs, self.dict_size], name='W',
                                 lista=True, lista_weight_S=True, sparse_dictionary=True, regularizable=True)
-        self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
-                                lista=True, lista_weight_W=True, regularizable=True)
-        self.theta = self.add_param(params_init[2], [self.dict_size, ], name='theta',
+        # self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
+        #                         lista=True, lista_weight_W=True, regularizable=True)
+        if T > 0:
+            self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
+            self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
+                                    lista=True, lista_weight_W=True, regularizable=True)
+        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ], name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
-        self.transposed = additional_parameters[0]
-        self.p_drop_input_to_shrinkage = additional_parameters[1]
-        self.p_drop_shrinkage = additional_parameters[2]
-        self.rescale = additional_parameters[3]
+        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
+                                    name='theta',
+                                    lista=True, lista_fun_param=True, regularizable=False)
+        self.eps = 1e-6
+        self.clipped_theta = T.clip(self.theta, self.eps, 10)
+
+    def get_dictionary_param(self):
+        return self.W
+
+    def get_dictionary(self):
+        return self.W.T if not self.transposed else self.W
+
+    def get_dictionary_transpose(self):
+        return self.W if not self.transposed else self.W.T
 
     def dropout(self, input, p_drop, deterministic=False, **kwargs):
         """
@@ -96,21 +209,17 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
             return input * self._srng.binomial(input_shape, p=retain_prob,
                                                dtype=theano.config.floatX)
 
-    def get_dictionary_param(self):
-        return self.W
-
-    def get_dictionary(self):
-        return T.transpose(self.W) if not self.transposed else self.W
+    def shrinkage_theta(self, input):
+        return self.clipped_theta * shrinkage(input / self.clipped_theta)
 
     def get_output_for(self, input, deterministic=False, **kwargs):
-        eps = 1e-6
-        input_to_shrinkage = T.dot(input, self.W if not self.transposed else self.W.transpose())
+        input_to_shrinkage = T.dot(input, self.get_dictionary_transpose())
         if self.p_drop_input_to_shrinkage is not None and self.T is not 0:
             input_to_shrinkage = self.dropout(input_to_shrinkage, self.p_drop_input_to_shrinkage, deterministic,
                                               **kwargs)
-        output = shrinkage(input_to_shrinkage, self.theta)
+        output = self.shrinkage_theta(input_to_shrinkage)
         for _ in range(self.T):
-            output = shrinkage(T.dot(output, self.S) + input_to_shrinkage, self.theta + eps)
+            output = self.shrinkage_theta(T.dot(output, self.S) + input_to_shrinkage)
             if self.p_drop_shrinkage is not None and _ is not self.T - 1:
                 output = self.dropout(output, self.p_drop_shrinkage, deterministic, **kwargs)
         return output
@@ -140,30 +249,53 @@ class LISTA(Layer, SparseAlgorithm):
         :return:
         '''
         super(LISTA, self).__init__(incoming, **kwargs)
+        self.transposed = addition_parameters[0]
         num_inputs = incoming.output_shape[-1]
         self.dict_size = dimension[0]
         self.T = dimension[1]
         self.W = self.add_param(params_init[0], [num_inputs, self.dict_size], name='W',
                                 lista=True, lista_weight_S=True, sparse_dictionary=True, regularizable=True)
-        self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
-                                lista=True, lista_weight_W=True, regularizable=True)
-        self.theta = self.add_param(params_init[2], [self.dict_size, ], name='theta',
+        # self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
+        #                         lista=True, lista_weight_W=True, regularizable=True)
+        if T > 0:
+            self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
+            self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
+                                    lista=True, lista_weight_W=True, regularizable=True)
+        self.theta = self.add_param(theano.shared(floatX(0.5 * np.ones([self.dict_size, ]))), [self.dict_size, ],
+                                    name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
-        self.transposed = addition_parameters[0]
+        self.eps = 1e-6
+        self.clipped_theta = T.clip(self.theta, self.eps, 10)
 
     def get_dictionary_param(self):
         return self.W
 
     def get_dictionary(self):
-        return T.transpose(self.W) if not self.transposed else self.W
+        return self.W.T if not self.transposed else self.W
+
+    def get_dictionary_transpose(self):
+        return self.W if not self.transposed else self.W.T
+
+    def shrinkage_theta(self, input):
+        return self.clipped_theta * shrinkage(input / self.clipped_theta)
 
     def get_output_for(self, input, **kwargs):
-        eps = 1e-6
-        B = T.dot(input, self.W if not self.transposed else self.W.transpose())
-        output = shrinkage(B, self.theta + eps)
+        B = T.dot(input, self.get_dictionary_transpose())
+        output = self.shrinkage_theta(B)
         for _ in range(self.T):
-            output = shrinkage(T.dot(output, self.S) + B, self.theta + eps)
+            output = self.shrinkage_theta(T.dot(output, self.S) + B)
+        output = T.clip(output, 0, float('inf'))
         return output
+        # self.B = T.dot(input, self.get_dictionary_transpose())
+        # shrinkage_fn = lambda x, theta: theta * shrinkage(x / theta)
+        # output, _ = theano.scan(fn=lambda previous_output, S, theta, B: shrinkage_fn(T.dot(previous_output, S) + B, theta),
+        #                         outputs_info=shrinkage_fn(self.B, self.theta),
+        #                         non_sequences=[self.S, self.theta, self.B],
+        #                         n_steps=self.T)
+        # output = output[-1]
+        # output = T.clip(output, 0, float('inf'))
+        # return output
+
 
     def get_output_shape_for(self, input_shape):
         return (input_shape[0], self.dict_size)

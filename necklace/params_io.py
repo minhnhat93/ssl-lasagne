@@ -34,4 +34,4 @@ def write_model_data(models, other_data, filename):
     filename = os.path.join('./', filename)
     filename = '%s.%s' % (filename, PARAM_EXTENSION)
     with open(filename, 'w') as f:
-        pickle.dump(data, f)
+        pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)

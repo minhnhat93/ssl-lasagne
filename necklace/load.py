@@ -5,6 +5,7 @@ import numpy as np
 # File to keep where the each file should be stored
 from path_settings import DATA_PATH
 from parameters import N_TRAIN, N_VALID, N_TEST
+from sklearn import preprocessing
 
 
 def one_hot(x, n):
@@ -16,7 +17,7 @@ def one_hot(x, n):
     return o_h
 
 
-def mnist(ntrain=N_TRAIN, nvalid=N_VALID, ntest=N_TEST, onehot=True, ndim=2):
+def mnist(ntrain=N_TRAIN, nvalid=N_VALID, ntest=N_TEST, onehot=True, normalize_input=True, ndim=2):
     f = open(os.path.join(DATA_PATH, 'mnist.pkl'))
     loaded_objs = pickle.load(f)
     f.close()
@@ -33,6 +34,9 @@ def mnist(ntrain=N_TRAIN, nvalid=N_VALID, ntest=N_TEST, onehot=True, ndim=2):
     # NEW IMPLEMENTATION
     vlX = np.concatenate((trX, vlX), axis=0)
     vlY = np.concatenate((trY, vlY), axis=0)
+    if normalize_input:
+        vlX = preprocessing.scale(vlX)
+        teX = preprocessing.scale(teX)
     trX = np.delete(vlX, valid_mask, axis=0)
     trY = np.delete(vlY, valid_mask, axis=0)
     vlX = vlX[valid_mask]
