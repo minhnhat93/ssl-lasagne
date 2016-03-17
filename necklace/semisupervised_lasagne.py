@@ -71,7 +71,7 @@ with open(os.path.join(DATA_PATH,'labeled_index.pkl'), 'r') as f:
     labeled_idx = pickle.load(f)
 
 # Load image and label of train, validation, test set
-trX, vlX, teX, trY, vlY, teY = mnist(onehot=True, ndim=2)
+trX, vlX, teX, trY, vlY, teY = mnist(onehot=True, normalize_axes=None, ndim=2)
 IM_SIZE = trX.shape[1]
 
 #-----------------------SET PARAMETERS-------------------------#
@@ -89,6 +89,9 @@ unsupervised_graph, supervised_graph, features = build_computation_graph(input_v
 reconstruction, prediction = layers.get_output([unsupervised_graph, supervised_graph])
 # Test graph has no dropout so deterministic = True
 test_reconstruction, test_prediction = layers.get_output([unsupervised_graph, supervised_graph], deterministic=True)
+if run_parameters.clip_0:
+    reconstruction = T.clip(reconstruction, 0, float('inf'))
+    test_reconstruction = T.clip(test_reconstruction, 0, float('inf'))
 
 # Get all trainable params
 params = layers.get_all_params(unsupervised_graph, trainable=True) + \
@@ -102,22 +105,29 @@ regularization_params = utils.unique(regularization_params)
 
 # Creating loss functions
 # Train loss has to take into account of labeled image or not
-loss1 = objectives.squared_error(reconstruction, input_var)
+if run_parameters.unsupervised_cost_fun == 'squared_error':
+    loss1 = objectives.squared_error(reconstruction, input_var)
+elif run_parameters.unsupervised_cost_fun == 'categorical_crossentropy':
+    loss1 = objectives.categorical_crossentropy(reconstruction, input_var)
 if supervised_cost_fun == 'squared_error':
     loss2 = objectives.squared_error(prediction, target_var) * repeat_col(labeled_var, 10)
 elif supervised_cost_fun == 'categorical_crossentropy':
     loss2 = objectives.categorical_crossentropy(prediction, target_var) * labeled_var.T
 l2_penalties = regularization.apply_penalty(regularization_params, regularization.l2)
 sparse_layers = layers.get_output(get_all_sparse_layers(unsupervised_graph), deterministic=True)
-sparse_regularizer = reduce(lambda x, y: x + T.clip((T.mean(abs(y)) - run_parameters.sparse_regularize_factor),
+sparse_regularizer = reduce(lambda x, y: x + T.clip((T.mean(abs(y)) - run_parameters.sparse_regularize_factor) * y.size,
                                                     0, float('inf')),
                             sparse_layers, 0)
 loss = losses_ratio[0] * loss1.mean() + \
        losses_ratio[1] * loss2.mean() + \
        losses_ratio[2] * l2_penalties.mean() + \
-       0.5 * sparse_regularizer
+       losses_ratio[3] * sparse_regularizer
 # Test loss means 100% labeled
-test_loss1 = objectives.squared_error(test_reconstruction, input_var)
+
+if run_parameters.unsupervised_cost_fun == 'squared_error':
+    test_loss1 = objectives.squared_error(reconstruction, input_var)
+elif run_parameters.unsupervised_cost_fun == 'categorical_crossentropy':
+    test_loss1 = objectives.categorical_crossentropy(reconstruction, input_var)
 if supervised_cost_fun == 'squared_error':
     test_loss2 = objectives.squared_error(test_prediction, target_var)
 elif supervised_cost_fun == 'categorical_crossentropy':
@@ -125,7 +135,7 @@ elif supervised_cost_fun == 'categorical_crossentropy':
 test_loss = losses_ratio[0] * test_loss1.mean() + \
             losses_ratio[1] * test_loss2.mean() + \
             losses_ratio[2] * l2_penalties.mean() + \
-            0.5 * sparse_regularizer
+            losses_ratio[3] * sparse_regularizer
 
 # Update function to train
 # sgd_lr = run_parameters.update_lr
@@ -231,6 +241,12 @@ elif MODE == 'TRAIN':
                 pickle.dump([train_wrong_samples, train_wrong_classification,
                              valid_wrong_samples, valid_wrong_classification,
                              test_wrong_samples, test_wrong_classification], f, pickle.HIGHEST_PROTOCOL)
+        # NORMALIZE DICTIONARY AFTER 1 EPOCH:
+        if run_parameters.normalize_dictionary_after_epoch:
+            for sparse_layer in sparse_layers:
+                D_ref = sparse_layer.get_dictionary()
+                D = D_ref.get_value();
+                D_ref.set_value(D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0))
     # plot losses graph
     plt.clf()
     plt.plot(train_loss, 'r-')

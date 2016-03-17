@@ -1,12 +1,15 @@
+import theano
 from lasagne.init import GlorotUniform, Uniform, Constant
 from lasagne.layers import InputLayer, DropoutLayer, DenseLayer, BatchNormLayer, batch_norm
 from lasagne.nonlinearities import identity, softmax
+from lasagne.utils import floatX
 
+from load import load_dictionary_init
 from otherlayers import LinearCombinationLayer, TransposedDenseLayer
 
 
 def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params, tied_weight=False, necklace_link=False,
-                    residual_link=False, batch_normalization=False, norm_axes=0, p_weight=0.5):
+                    residual_link=False, batch_normalization=False, norm_axes=0, p_weight=0.5, D_init=None):
     '''
     Implementation of a necklace network. See: https://drive.google.com/file/d/0B8EOfHp2L5mNbkY1UkhlWmF2YWc/view?ts=56b3a4fc
     :param dimensions: contain information of the dimension
@@ -29,7 +32,7 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         stack_idx += 1
         sparse_dimensions = dimensions[_][0:2]
         output_size = dimensions[_][2]
-        params_init = [GlorotUniform(),
+        params_init = [GlorotUniform() if D_init is None else D_init[_],
                        GlorotUniform(0.01),
                        Uniform([0, 0.5])]
         network = SparseClass(network, sparse_dimensions, params_init, [False] + additional_sparse_params,
@@ -102,7 +105,10 @@ def build_computation_graph(input_var, parameters):
     additional_sparse_params = parameters.additional_sparse_params
     network = InputLayer(shape=input_shape, input_var=input_var, name='input')
     network = DropoutLayer(network, p=p_input, name='input_drop')
+    D = load_dictionary_init(100, normalize_axes=None).transpose()
+    D = (D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0))
+    D_init = [theano.shared(floatX(D))]
     network, classification_branch, features = NecklaceNetwork(
         network, dimensions, sparse_algorithm, additional_sparse_params, tied_weight, necklace_link, residual_link,
-        batch_normalization, norm_axes, p_weight)
+        batch_normalization, norm_axes, p_weight, D_init)
     return network, classification_branch, features

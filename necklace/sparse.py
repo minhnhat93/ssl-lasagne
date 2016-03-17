@@ -161,13 +161,13 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
         self.dict_size = dimension[0]
         self.T = dimension[1]
         self.W = self.add_param(params_init[0], [num_inputs, self.dict_size], name='W',
-                                lista=True, lista_weight_S=True, sparse_dictionary=True, regularizable=True)
+                                lista=True, lista_weight_S=True, sparse_dictionary=True, regularizable=False)
         # self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
         #                         lista=True, lista_weight_W=True, regularizable=True)
         if T > 0:
             self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
             self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
-                                    lista=True, lista_weight_W=True, regularizable=True)
+                                    lista=True, lista_weight_W=True, regularizable=False)
         self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ], name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
         self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
@@ -261,7 +261,7 @@ class LISTA(Layer, SparseAlgorithm):
             self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
             self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
                                     lista=True, lista_weight_W=True, regularizable=True)
-        self.theta = self.add_param(theano.shared(floatX(0.5 * np.ones([self.dict_size, ]))), [self.dict_size, ],
+        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
                                     name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
         self.eps = 1e-6
@@ -284,7 +284,7 @@ class LISTA(Layer, SparseAlgorithm):
         output = self.shrinkage_theta(B)
         for _ in range(self.T):
             output = self.shrinkage_theta(T.dot(output, self.S) + B)
-        output = T.clip(output, 0, float('inf'))
+        # output = T.clip(output, 0, float('inf'))
         return output
         # self.B = T.dot(input, self.get_dictionary_transpose())
         # shrinkage_fn = lambda x, theta: theta * shrinkage(x / theta)
@@ -298,4 +298,4 @@ class LISTA(Layer, SparseAlgorithm):
 
 
     def get_output_shape_for(self, input_shape):
-        return (input_shape[0], self.dict_size)
+        return (self.input_shape[0], self.dict_size)
