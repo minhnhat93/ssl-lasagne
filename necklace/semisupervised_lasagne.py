@@ -114,10 +114,11 @@ if supervised_cost_fun == 'squared_error':
 elif supervised_cost_fun == 'categorical_crossentropy':
     loss2 = objectives.categorical_crossentropy(prediction, target_var) * labeled_var.T
 l2_penalties = regularization.apply_penalty(regularization_params, regularization.l2)
-sparse_layers = layers.get_output(get_all_sparse_layers(unsupervised_graph), deterministic=True)
+sparse_layers = get_all_sparse_layers(unsupervised_graph)
+sparse_layers_output = layers.get_output(sparse_layers, deterministic=True)
 sparse_regularizer = reduce(lambda x, y: x + T.clip((T.mean(abs(y)) - run_parameters.sparse_regularize_factor) * y.size,
                                                     0, float('inf')),
-                            sparse_layers, 0)
+                            sparse_layers_output, 0)
 loss = losses_ratio[0] * loss1.mean() + \
        losses_ratio[1] * loss2.mean() + \
        losses_ratio[2] * l2_penalties.mean() + \
@@ -125,9 +126,9 @@ loss = losses_ratio[0] * loss1.mean() + \
 # Test loss means 100% labeled
 
 if run_parameters.unsupervised_cost_fun == 'squared_error':
-    test_loss1 = objectives.squared_error(reconstruction, input_var)
+    test_loss1 = objectives.squared_error(test_reconstruction, input_var)
 elif run_parameters.unsupervised_cost_fun == 'categorical_crossentropy':
-    test_loss1 = objectives.categorical_crossentropy(reconstruction, input_var)
+    test_loss1 = objectives.categorical_crossentropy(test_reconstruction, input_var)
 if supervised_cost_fun == 'squared_error':
     test_loss2 = objectives.squared_error(test_prediction, target_var)
 elif supervised_cost_fun == 'categorical_crossentropy':
@@ -192,6 +193,13 @@ elif MODE == 'TRAIN':
     num_iter = 1
     for epoch in range(num_epochs):
         start_time = time.time()
+        # NORMALIZE DICTIONARY AFTER 1 EPOCH:
+        if run_parameters.normalize_dictionary_after_epoch:
+            for sparse_layer in sparse_layers[0:len(sparse_layers) / 2]:
+                D_ref = sparse_layer.get_dictionary()
+                D = D_ref.eval()
+                sparse_layer.set_dictionary((D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0)))
+        # RUN TRAIN
         for batch in iterate_minibatches(trX, trY, labeled_idx, run_parameters.batch_size, shuffle=True):
             inputs, targets, labeled = batch
             sgd_lr.set_value(1 / num_iter)
@@ -241,12 +249,6 @@ elif MODE == 'TRAIN':
                 pickle.dump([train_wrong_samples, train_wrong_classification,
                              valid_wrong_samples, valid_wrong_classification,
                              test_wrong_samples, test_wrong_classification], f, pickle.HIGHEST_PROTOCOL)
-        # NORMALIZE DICTIONARY AFTER 1 EPOCH:
-        if run_parameters.normalize_dictionary_after_epoch:
-            for sparse_layer in sparse_layers:
-                D_ref = sparse_layer.get_dictionary()
-                D = D_ref.get_value();
-                D_ref.set_value(D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0))
     # plot losses graph
     plt.clf()
     plt.plot(train_loss, 'r-')

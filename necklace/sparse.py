@@ -273,6 +273,9 @@ class LISTA(Layer, SparseAlgorithm):
     def get_dictionary(self):
         return self.W.T if not self.transposed else self.W
 
+    def set_dictionary(self, new_dict):
+        self.W.set_value(new_dict.T if not self.transposed else new_dict)
+
     def get_dictionary_transpose(self):
         return self.W if not self.transposed else self.W.T
 

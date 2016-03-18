@@ -106,7 +106,7 @@ def build_computation_graph(input_var, parameters):
     network = InputLayer(shape=input_shape, input_var=input_var, name='input')
     network = DropoutLayer(network, p=p_input, name='input_drop')
     D = load_dictionary_init(100, normalize_axes=None).transpose()
-    D = (D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0))
+    # D = (D - D.min(axis=0)) / (D.max(axis=0) - D.min(axis=0))
     D_init = [theano.shared(floatX(D))]
     network, classification_branch, features = NecklaceNetwork(
         network, dimensions, sparse_algorithm, additional_sparse_params, tied_weight, necklace_link, residual_link,

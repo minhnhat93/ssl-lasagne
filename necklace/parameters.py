@@ -31,7 +31,7 @@ run_parameters = RunParameters(
     True,
     True,
     True,
-    True,
+    False,
     False,
     False,
     0.0, 0.0, 0,
@@ -40,7 +40,7 @@ run_parameters = RunParameters(
     batch_size,
     # Set learning ratio for unsupervised, supervised and weights regularization
     # [1, 0, 0.001, 0.0001],
-    [1, 0, 0., 0.00001],
+    [1, 0, 0., 0.0001],
     # 'categorical_crossentropy' or 'squared_error'
     'squared_error',
     'categorical_crossentropy',
