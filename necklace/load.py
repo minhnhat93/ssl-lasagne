@@ -65,8 +65,8 @@ def load_dictionary_init(n_each=250, normalize_axes=0):
         D = pickle.load(f)
     load_index = []
     for _ in range(10):
-        _load_index = range(250 * _, 250 * _ + n_each);
-        load_index = load_index + _load_index;
+        _load_index = range(250 * _, 250 * _ + n_each)
+        load_index = load_index + _load_index
     D = D[load_index]
     if normalize_axes is not None:
         D = preprocessing.scale(D, axis=normalize_axes)

@@ -13,6 +13,7 @@ def shrinkage(x):
     # return T.switch(T.lt(x, -shrink_value), x + shrink_value, T.switch(T.le(x, shrink_value), 0, x - shrink_value))
     return T.switch(T.lt(x, shrink_value), 0, x - shrink_value)
 
+
 class SparseAlgorithm:
     def __init__(self):
         pass
@@ -113,7 +114,6 @@ def get_all_sparse_layers(layer, treat_as_input=None):
     return result
 
 
-
 class ShrinkageLayer(Layer):
     def __init__(self, incoming, dict_size, params_init=(GlorotUniform(0.01),
                                                          Normal(0.0005, mean=0.001),
@@ -168,7 +168,8 @@ class LISTAWithDropout(DropoutLayer, SparseAlgorithm):
             self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
             self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
                                     lista=True, lista_weight_W=True, regularizable=False)
-        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ], name='theta',
+        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
+                                    name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
         self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
                                     name='theta',
@@ -298,7 +299,6 @@ class LISTA(Layer, SparseAlgorithm):
         # output = output[-1]
         # output = T.clip(output, 0, float('inf'))
         # return output
-
 
     def get_output_shape_for(self, input_shape):
         return (self.input_shape[0], self.dict_size)

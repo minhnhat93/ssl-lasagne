@@ -9,8 +9,13 @@ RunParameters = namedtuple('RunParameters', 'sparse_algorithm'
                                             ' necklace_link'
                                             ' residual_link'
                                             ' batch_normalization'
-                                            ' clip_0'
+                                            ' clip_unsupervised_output'
+                                            ' clip_supervised_output'
+                                            ' dictionary_init'
                                             ' normalize_dictionary_after_epoch'
+                                            ' clip_gradient'
+                                            ' load_pretrain_unsupervised '
+                                            ' load_pretrain_supervised'
                                             ' p_input p_weight norm_axes'
                                             ' additional_sparse_params'
                                             ' update_lr'
@@ -20,7 +25,7 @@ RunParameters = namedtuple('RunParameters', 'sparse_algorithm'
                                             ' supervised_cost_fun'
                                             ' sparse_regularize_factor'
                                             ' num_epochs'
-                                            ' run_index')
+                                            ' run_index ')
 batch_size = 1000
 run_parameters = RunParameters(
     LISTA,
@@ -31,22 +36,27 @@ run_parameters = RunParameters(
     True,
     True,
     True,
-    False,
+    False,  # batch norm hoc dictionary khong duoc
+    None,
+    None,
+    True,
+    1,
+    [True, 0.1],
     False,
     False,
     0.0, 0.0, 0,
     [None, None, False],
-    0.0001,  # 0.0001 seems to be a really nice learning rate
+    0.001,  # 0.0001 seems to be a really nice learning rate
     batch_size,
     # Set learning ratio for unsupervised, supervised and weights regularization
     # [1, 0, 0.001, 0.0001],
-    [1, 0, 0., 0.0001],
+    [1, 0, 0.00, 0.01],
     # 'categorical_crossentropy' or 'squared_error'
     'squared_error',
     'categorical_crossentropy',
-    0.05,
+    0.05,  # 0.05 = perfect location
     5000,
-    1
+    2
 )
 
 N_TRAIN = 50000

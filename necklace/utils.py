@@ -7,6 +7,14 @@ from skimage.io import imsave
 from load import mnist
 
 
+def zca_whitening(inputs):
+    sigma = np.dot(inputs, inputs.T) / inputs.shape[1]  # Correlation matrix
+    U, S, V = np.linalg.svd(sigma)  # Singular Value Decomposition
+    epsilon = 0.1  # Whitening constant, it prevents division by zero
+    ZCAMatrix = np.dot(np.dot(U, np.diag(1.0 / np.sqrt(np.diag(S) + epsilon))), U.T)  # ZCA Whitening matrix
+    return np.dot(ZCAMatrix, inputs)  # Data whitening
+
+
 def export_image_array(image_array, output_folder, prefix):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
@@ -20,6 +28,7 @@ def export_classification_info(prediction, target, output_folder, prefix):
     for _ in range(len(prediction)):
         with open(os.path.join(output_folder, '{}{}.txt'.format(prefix, _)), 'w') as f:
             f.write("{} {}".format(target[_], prediction[_]))
+
 
 def export_wrong_samples(input_file, output_folder):
     trX, vlX, teX, trY, vlY, teY = mnist(onehot=False, ndim=2)
@@ -37,3 +46,9 @@ def export_wrong_samples(input_file, output_folder):
     export_classification_info(vlY, valid_c, os.path.join(output_folder, 'valid'), "")
     export_image_array(teX, os.path.join(output_folder, 'test'), "")
     export_classification_info(teY, test_c, os.path.join(output_folder, 'test'), "")
+
+
+def normalize_zero_one(inputs, norm_axes):
+    min_inputs = inputs.min(norm_axes, keepdims=True)
+    max_inputs = inputs.max(norm_axes, keepdims=True)
+    return (inputs - min_inputs) / (max_inputs - min_inputs)

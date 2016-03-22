@@ -3,6 +3,7 @@ import theano.tensor as T
 from lasagne.init import GlorotUniform, Constant
 from lasagne.layers import Layer, MergeLayer
 from lasagne.nonlinearities import identity, rectify
+from numpy import exp
 
 
 class TransposedDenseLayer(Layer):
@@ -53,3 +54,8 @@ class LinearCombinationLayer(MergeLayer):
                   self.alpha[1] * self.input_layers[1].get_output_for(inputs[1], **kwargs))
         return output
 
+
+def stable_softmax(x):
+    e_x = exp(x - x.max(axis=1, keepdims=True))
+    out = e_x / e_x.sum(axis=1, keepdims=True)
+    return out
