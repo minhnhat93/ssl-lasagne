@@ -1,6 +1,8 @@
+import theano
 from lasagne.init import GlorotUniform, Uniform, Constant
-from lasagne.layers import InputLayer, DropoutLayer, DenseLayer, BatchNormLayer, batch_norm
+from lasagne.layers import InputLayer, DropoutLayer, DenseLayer, BatchNormLayer
 from lasagne.nonlinearities import identity
+from lasagne.utils import floatX
 
 from load import load_dictionary_init
 from otherlayers import LinearCombinationLayer, TransposedDenseLayer
@@ -31,7 +33,7 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         stack_idx += 1
         sparse_dimensions = dimensions[_][0:2]
         output_size = dimensions[_][2]
-        params_init = [GlorotUniform() if D_init is None else D_init[_].transpose(),
+        params_init = [GlorotUniform() if D_init is None else theano.shared(floatX(D_init[_].transpose())),
                        GlorotUniform(0.01),
                        Uniform([0, 0.5])]
         network = SparseClass(network, sparse_dimensions, params_init, [False] + additional_sparse_params,
@@ -83,11 +85,16 @@ def NecklaceNetwork(incoming, dimensions, SparseClass, additional_sparse_params,
         if batch_normalization and _ is not 0:
             network = BatchNormLayer(network, axes=norm_axes)
         last_residual_layer = network
-        # SUPERVISED BRANCH
-        classification_branch = DenseLayer(feature, 10, nonlinearity=stable_softmax)
-        if batch_normalization:
-            classification_branch = batch_norm(classification_branch, axes=norm_axes)
-        classification_branch = DropoutLayer(classification_branch, p=p_weight)
+
+    # SUPERVISED BRANCH
+    # classification_branch = DenseLayer(feature, 200, nonlinearity=identity)
+    # if batch_normalization:
+    #     classification_branch = batch_norm(classification_branch, axes=norm_axes)
+    # classification_branch = DropoutLayer(classification_branch, p=p_weight)
+    # classification_branch = DenseLayer(classification_branch, 100, nonlinearity=identity)
+    # classification_branch = DropoutLayer(classification_branch, p=p_weight)
+    classification_branch = DenseLayer(feature, 10, nonlinearity=stable_softmax)
+    classification_branch = DropoutLayer(classification_branch, p=p_weight)
     return network, classification_branch, feature
 
 
@@ -102,7 +109,7 @@ def build_computation_graph(input_var, parameters):
     batch_normalization = parameters.batch_normalization
     p_input = parameters.p_input
     p_weight = parameters.p_weight
-    norm_axes = parameters.norm_axes
+    norm_axes = parameters.batch_norm_axes
     additional_sparse_params = parameters.additional_sparse_params
     network = InputLayer(shape=input_shape, input_var=input_var, name='input')
     network = DropoutLayer(network, p=p_input, name='input_drop')

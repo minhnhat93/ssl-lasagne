@@ -42,6 +42,7 @@ def repeat_col(col, n_col):
 def run_test(test_function, testX, testY, prefix='test'):
     # run test on an image set
     test_err = 0
+    class_err = 0
     test_acc = 0
     test_batches = 0
     wrong_samples = []
@@ -51,16 +52,18 @@ def run_test(test_function, testX, testY, prefix='test'):
                                      run_parameters.batch_size,
                                      shuffle=False):
         inputs, targets, labeled = batch
-        err, _, _, _, classification, acc, _wrong_samples = test_function(inputs, targets, labeled)
+        err, _, _loss2, _, classification, acc, _wrong_samples = test_function(inputs, targets, labeled)
         test_err += err
+        class_err += _loss2
         test_acc += acc
         wrong_samples += (_wrong_samples.nonzero()[0] + test_batches * run_parameters.batch_size).tolist()
         _wrong_classification = classification[_wrong_samples.nonzero()]
         wrong_classification += _wrong_classification.tolist()
         test_batches += 1
     average_test_score = test_err / test_batches
+    class_err /= test_batches
     test_accuracy = test_acc / test_batches
-    print("  " + prefix + " loss:\t\t{:.6f}".format(average_test_score))
+    print("  " + prefix + " loss:\t\t{:.6f}\t{:.6f}".format(average_test_score, class_err))
     print("  " + prefix + " accuracy:\t{:.6f} %".format(
         test_accuracy * 100))
     return average_test_score, test_accuracy, wrong_samples, wrong_classification
@@ -122,12 +125,15 @@ elif supervised_cost_fun == 'categorical_crossentropy':
 l2_penalties = regularization.apply_penalty(regularization_params, regularization.l2)
 sparse_layers = get_all_sparse_layers(unsupervised_graph)
 sparse_layers_output = layers.get_output(sparse_layers, deterministic=True)
-# sparse_regularizer = reduce(lambda x, y: x + T.clip((T.mean(abs(y)) - run_parameters.sparse_regularize_factor) * y.size,
-#                                                     0, float('inf')),
-#                             sparse_layers_output, 0)
-sparse_regularizer = reduce(lambda x, y: x + T.clip(T.mean(y, axis=1) - run_parameters.sparse_regularize_factor, 0,
-                                                    float('inf')).sum() * y.shape[1],
-                            sparse_layers_output, 0)
+if run_parameters.sparse_regularizer_type == 0:
+    sparse_regularizer = reduce(lambda x, y: x + T.clip((T.mean(abs(y)) - run_parameters.sparse_regularize_factor) *
+                                                        y.size, 0, float('inf')),
+                                sparse_layers_output, 0)
+elif run_parameters.sparse_regularizer_type == 1:
+    sparse_regularizer = reduce(
+        lambda x, y: x + T.clip(T.mean(abs(y), axis=1) - run_parameters.sparse_regularize_factor,
+                                0, float('inf')).sum() * y.shape[1],
+        sparse_layers_output, 0)
 
 loss = losses_ratio[0] * loss1.mean() + \
        losses_ratio[1] * loss2.mean() + \
@@ -149,7 +155,7 @@ test_loss = losses_ratio[0] * test_loss1.mean() + \
             losses_ratio[3] * sparse_regularizer
 
 # Compute gradient in case of gradient clipping
-if run_parameters.clip_gradient is not None:
+if run_parameters.clip_gradient[0] is not None:
     grad = T.grad(loss, params)
     if run_parameters.clip_gradient[0] is True:  # softclip
         grad = [updates.norm_constraint(g, run_parameters.clip_gradient[1], range(g.ndim)) for g in grad]
@@ -191,14 +197,17 @@ if MODE == 'TEST':
 elif MODE == 'TRAIN':
     # if last model exists, load last model:
     best_validation_acc = 0
+    best_validation_err = float('inf')
     if os.path.isfile(LAST_MODEL_PATH):
         choice = input(
             'PREVIOUS MODEL FOUND, CONTINUE TRAINING OR OVERRIDE OR END? (ANSWER: "CONTINUE", "OVERRIDE", "END")\n')
         if choice == 'CONTINUE':
-            best_validation_acc, old_lr = io.read_model_data([unsupervised_graph, supervised_graph], LAST_MODEL_PATH)
+            best_validation_err, best_validation_acc, old_lr = io.read_model_data(
+                [unsupervised_graph, supervised_graph], LAST_MODEL_PATH)
             sgd_lr.set_value(old_lr)
         elif choice == 'OVERRIDE':
             best_validation_acc = 0
+            best_validation_err = float('inf')
         else:
             sys.exit('Terminated by user choice.')
     if run_parameters.load_pretrain_unsupervised:
@@ -218,10 +227,11 @@ elif MODE == 'TRAIN':
         start_time = time.time()
         # NORMALIZE DICTIONARY AFTER 1 EPOCH:
         if run_parameters.normalize_dictionary_after_epoch is not None:
-            for sparse_layer in sparse_layers[0:len(sparse_layers) / 2]:
+            for sparse_layer in sparse_layers:
                 D_ref = sparse_layer.get_dictionary()
                 D = D_ref.eval()
-                sparse_layer.set_dictionary(normalize_zero_one(D, run_parameters.normalize_dictionary_after_epoch))
+                sparse_layer.set_dictionary(
+                    normalize_zero_one(np.array(D), run_parameters.normalize_dictionary_after_epoch))
         # RUN TRAIN
         for batch in iterate_minibatches(trX, trY, labeled_idx, run_parameters.batch_size, shuffle=True):
             inputs, targets, labeled = batch
@@ -229,6 +239,7 @@ elif MODE == 'TRAIN':
             num_iter += 1
             train_err = train_fn(inputs, targets, labeled)
         train_err = 0
+        class_err = 0
         train_acc = 0
         train_batches = 0
         train_wrong_samples = []
@@ -242,6 +253,7 @@ elif MODE == 'TRAIN':
             train_loss2.append(_loss2)
             train_regularize.append(_regularize)
             train_err += err
+            class_err += _loss2
             train_acc += acc
             train_wrong_samples += (_wrong_samples.nonzero()[0] + train_batches * run_parameters.batch_size).tolist()
             _wrong_classification = train_classification[_wrong_samples.nonzero()]
@@ -252,26 +264,30 @@ elif MODE == 'TRAIN':
         last_loss = train_err
         print("Epoch {} of {} took {:.3f}s".format(
             epoch + 1, num_epochs, time.time() - start_time))
-        print("  training loss:\t\t{:.6f}".format(train_err / train_batches))
+        print("  training loss:\t\t{:.6f}\t{:.6f}".format(train_err / train_batches, class_err / train_batches))
         print("  training accuracy:\t{:.6f} %".format(
             train_acc / train_batches * 100))
 
         valid_err, valid_acc, valid_wrong_samples, valid_wrong_classification = run_test(val_fn, vlX, vlY, "validation")
         # save backup model every 10 epochs
         if epoch % 10 == 0:
-            io.write_model_data([unsupervised_graph, supervised_graph], [best_validation_acc, sgd_lr.get_value()],
+            io.write_model_data([unsupervised_graph, supervised_graph],
+                                [best_validation_err, best_validation_acc, sgd_lr.get_value()],
                                 LAST_MODEL_PATH)
         # if best model is found, save best model
-        if valid_acc > best_validation_acc:
-            print('NEW BEST MODEL FOUND!')
-            best_validation_acc = valid_acc
-            io.write_model_data([unsupervised_graph, supervised_graph], [best_validation_acc, sgd_lr.get_value()],
-                                BEST_MODEL_PATH)
-            _, _, test_wrong_samples, test_wrong_classification = run_test(val_fn, teX, teY, "test")
-            with open(WRONG_SAMPLES_PATH, 'w') as f:
-                pickle.dump([train_wrong_samples, train_wrong_classification,
-                             valid_wrong_samples, valid_wrong_classification,
-                             test_wrong_samples, test_wrong_classification], f, pickle.HIGHEST_PROTOCOL)
+        if run_parameters.test_model:
+            if valid_err < best_validation_err:
+                print('NEW BEST MODEL FOUND!')
+                best_validation_acc = valid_acc
+                best_validation_err = valid_err
+                io.write_model_data([unsupervised_graph, supervised_graph],
+                                    [best_validation_err, best_validation_acc, sgd_lr.get_value()],
+                                    BEST_MODEL_PATH)
+                _, _, test_wrong_samples, test_wrong_classification = run_test(val_fn, teX, teY, "test")
+                with open(WRONG_SAMPLES_PATH, 'w') as f:
+                    pickle.dump([train_wrong_samples, train_wrong_classification,
+                                 valid_wrong_samples, valid_wrong_classification,
+                                 test_wrong_samples, test_wrong_classification], f, pickle.HIGHEST_PROTOCOL)
     # plot losses graph
     plt.clf()
     plt.plot(train_loss, 'r-')

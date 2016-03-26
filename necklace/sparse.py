@@ -10,8 +10,8 @@ from lasagne.utils import floatX
 
 def shrinkage(x):
     shrink_value = 1
-    # return T.switch(T.lt(x, -shrink_value), x + shrink_value, T.switch(T.le(x, shrink_value), 0, x - shrink_value))
-    return T.switch(T.lt(x, shrink_value), 0, x - shrink_value)
+    return T.switch(T.lt(x, -shrink_value), x + shrink_value, T.switch(T.le(x, shrink_value), 0, x - shrink_value))
+    # return T.switch(T.lt(x, shrink_value), 0, x - shrink_value)
 
 
 class SparseAlgorithm:
@@ -255,14 +255,14 @@ class LISTA(Layer, SparseAlgorithm):
         self.dict_size = dimension[0]
         self.T = dimension[1]
         self.W = self.add_param(params_init[0], [num_inputs, self.dict_size], name='W',
-                                lista=True, lista_weight_S=True, sparse_dictionary=True, regularizable=True)
+                                lista=True, lista_weight_W=True, sparse_dictionary=True, regularizable=True)
         # self.S = self.add_param(params_init[1], [self.dict_size, self.dict_size], name='S',
         #                         lista=True, lista_weight_W=True, regularizable=True)
         if T > 0:
             self.S = T.eye(self.dict_size) - T.dot(self.get_dictionary(), self.get_dictionary().T)
             self.S = self.add_param(theano.shared(floatX(self.S.eval())), [self.dict_size, self.dict_size], name='S',
-                                    lista=True, lista_weight_W=True, regularizable=True)
-        self.theta = self.add_param(theano.shared(floatX(np.ones([self.dict_size, ]))), [self.dict_size, ],
+                                    lista=True, lista_weight_S=True, regularizable=True)
+        self.theta = self.add_param(theano.shared(floatX(0.01 * np.ones([self.dict_size, ]))), [self.dict_size, ],
                                     name='theta',
                                     lista=True, lista_fun_param=True, regularizable=False)
         self.eps = 1e-6
