@@ -79,6 +79,11 @@ with open(os.path.join(DATA_PATH, 'labeled_index.pkl'), 'r') as f:
 # Load image and label of train, validation, test set
 trX, vlX, teX, trY, vlY, teY = mnist(onehot=True, normalize_axes=None, ndim=2)
 IM_SIZE = trX.shape[1]
+# with open('../data/pca_model.pkl','r') as f:
+#     pca = pickle.load(f)
+# trX=pca.transform(trX)
+# vlX=pca.transform(vlX)
+# teX=pca.transform(teX)
 
 # -----------------------SET PARAMETERS-------------------------#
 losses_ratio = run_parameters.losses_ratio
@@ -157,16 +162,16 @@ test_loss = losses_ratio[0] * test_loss1.mean() + \
 # Compute gradient in case of gradient clipping
 if run_parameters.clip_gradient[0] is not None:
     grad = T.grad(loss, params)
-    if run_parameters.clip_gradient[0] is True:  # softclip
+    if run_parameters.clip_gradient[0] is 0:  # softclip
         grad = [updates.norm_constraint(g, run_parameters.clip_gradient[1], range(g.ndim)) for g in grad]
-    else:
+    elif run_parameters.clip_gradient[0] is 1:
         grad = [T.clip(g, run_parameters.clip_gradient[0], run_parameters.clip_gradient[1]) for g in grad]
     loss = grad
 
 # Update function to train
 # sgd_lr = run_parameters.update_lr
 sgd_lr = theano.shared(utils.floatX(run_parameters.update_lr))
-sgd_lr_decay = utils.floatX(0.5)
+sgd_lr_decay = utils.floatX(1.0)
 sgd_lr_decay_threshold = utils.floatX(1.0)
 updates_function = updates.adam(loss, params, run_parameters.update_lr)
 
